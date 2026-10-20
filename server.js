@@ -508,9 +508,9 @@ const server = http.createServer(async (req, res) => {
       );
 
       const response = await fetch(playlistUrl, {
-        signal: AbortSignal.timeout(20000),
-        redirect: 'error'
-      });
+  signal: AbortSignal.timeout(20000),
+  redirect: 'follow'
+});
 
       if (!response.ok) {
         return sendJson(res, 502, {
