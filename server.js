@@ -334,14 +334,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type'
     });
 
     return res.end();
   }
 
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'POST') {
     return sendJson(res, 405, {
       ok: false,
       error: 'Método não permitido.'
@@ -379,6 +379,167 @@ const server = http.createServer(async (req, res) => {
         error: 'Não foi possível consultar os jogos agora.',
         date,
         games: []
+      });
+    }
+  }
+
+  // Importar playlist M3U por URL
+  if (req.method === 'POST' && pathname === '/api/import-playlist') {
+    try {
+      const body = await new Promise((resolve, reject) => {
+        let data = '';
+        req.on('data', chunk => {
+          data += chunk;
+          if (data.length > 100000) {
+            reject(new Error('Dados enviados muito grandes.'));
+            req.destroy();
+          }
+        });
+        req.on('end', () => {
+          try {
+            resolve(JSON.parse(data || '{}'));
+          } catch {
+            reject(new Error('JSON inválido.'));
+          }
+        });
+        req.on('error', reject);
+      });
+
+      const playlistUrl = new URL(String(body.url || ''));
+      if (
+        !['http:', 'https:'].includes(playlistUrl.protocol) ||
+        !playlistUrl.hostname ||
+        /^(localhost|.*\.localhost|.*\.local)$/i.test(playlistUrl.hostname) ||
+        /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.)/.test(playlistUrl.hostname)
+      ) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'URL inválida ou endereço não permitido.'
+        });
+      }
+
+      const response = await fetch(playlistUrl, {
+        signal: AbortSignal.timeout(20000),
+        redirect: 'error'
+      });
+
+      if (!response.ok) {
+        return sendJson(res, 502, {
+          ok: false,
+          error: `O servidor da playlist respondeu HTTP ${response.status}.`
+        });
+      }
+
+      const playlist = await response.text();
+
+      if (
+        playlist.length > 15 * 1024 * 1024 ||
+        !playlist.trim().startsWith('#EXTM3U')
+      ) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'A URL não retornou uma playlist M3U válida ou o arquivo é muito grande.'
+        });
+      }
+
+      res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Access-Control-Allow-Origin': '*'
+      });
+      return res.end(playlist);
+    } catch (error) {
+      console.error('[IMPORT M3U]', error);
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'Falha ao importar a playlist. Verifique a URL e tente novamente.'
+      });
+    }
+  }
+
+  // Importar playlist Xtream Codes
+  if (req.method === 'POST' && pathname === '/api/xtream') {
+    try {
+      const body = await new Promise((resolve, reject) => {
+        let data = '';
+        req.on('data', chunk => {
+          data += chunk;
+          if (data.length > 100000) {
+            reject(new Error('Dados enviados muito grandes.'));
+            req.destroy();
+          }
+        });
+        req.on('end', () => {
+          try {
+            resolve(JSON.parse(data || '{}'));
+          } catch {
+            reject(new Error('JSON inválido.'));
+          }
+        });
+        req.on('error', reject);
+      });
+
+      const base = new URL(String(body.server || ''));
+      if (
+        !['http:', 'https:'].includes(base.protocol) ||
+        !base.hostname ||
+        /^(localhost|.*\.localhost|.*\.local)$/i.test(base.hostname) ||
+        /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.)/.test(base.hostname)
+      ) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'Endereço do servidor inválido.'
+        });
+      }
+
+      if (!body.username || !body.password) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'Informe usuário e senha.'
+        });
+      }
+
+      const playlistUrl = new URL('/get.php', base);
+      playlistUrl.searchParams.set('username', String(body.username));
+      playlistUrl.searchParams.set('password', String(body.password));
+      playlistUrl.searchParams.set('type', 'm3u_plus');
+      playlistUrl.searchParams.set(
+        'output',
+        body.format === 'm3u8' ? 'm3u8' : 'ts'
+      );
+
+      const response = await fetch(playlistUrl, {
+        signal: AbortSignal.timeout(20000),
+        redirect: 'error'
+      });
+
+      if (!response.ok) {
+        return sendJson(res, 502, {
+          ok: false,
+          error: `O servidor Xtream respondeu HTTP ${response.status}.`
+        });
+      }
+
+      const playlist = await response.text();
+
+      if (
+        playlist.length > 15 * 1024 * 1024 ||
+        !playlist.trim().startsWith('#EXTM3U')
+      ) {
+        return sendJson(res, 400, {
+          ok: false,
+          error: 'O servidor não retornou uma playlist M3U válida.'
+        });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        playlist
+      });
+    } catch (error) {
+      console.error('[XTREAM]', error);
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'Falha na conexão Xtream. Confira o endereço, usuário e senha.'
       });
     }
   }
