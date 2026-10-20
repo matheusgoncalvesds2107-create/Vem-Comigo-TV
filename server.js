@@ -498,19 +498,28 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const playlistUrl = new URL('/get.php', base);
-      if (playlistUrl.protocol === 'https:') {
-  playlistUrl.protocol = 'http:';
-      }
-      playlistUrl.searchParams.set('username', String(body.username));
-      playlistUrl.searchParams.set('password', String(body.password));
-      playlistUrl.searchParams.set('type', 'm3u_plus');
-      playlistUrl.searchParams.set(
-        'output',
-        body.format === 'm3u8' ? 'm3u8' : 'ts'
-      );
+      const playlistUrl = new URL(String(body.url || ''));
 
-      const response = await fetch(playlistUrl, {
+if (playlistUrl.protocol === 'https:') {
+  playlistUrl.protocol = 'http:';
+}
+
+if (
+  !['http:', 'https:'].includes(playlistUrl.protocol) ||
+  !playlistUrl.hostname ||
+  /^(localhost|.*\.localhost|.*\.local)$/i.test(playlistUrl.hostname) ||
+  /^(127\.|10\.|192\.168\.|169\.254\.|0\.|172\.(1[6-9]|2\d|3[01])\.)/.test(playlistUrl.hostname)
+) {
+  return sendJson(res, 400, {
+    ok: false,
+    error: 'URL inválida ou endereço não permitido.'
+  });
+}
+
+const response = await fetch(playlistUrl, {
+  signal: AbortSignal.timeout(60000),
+  redirect: 'follow'
+});(playlistUrl, {
   signal: AbortSignal.timeout(20000),
   redirect: 'follow'
 });
