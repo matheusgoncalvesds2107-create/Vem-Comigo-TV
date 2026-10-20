@@ -499,6 +499,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       const playlistUrl = new URL('/get.php', base);
+      if (playlistUrl.protocol === 'https:') {
+  playlistUrl.protocol = 'http:';
+      }
       playlistUrl.searchParams.set('username', String(body.username));
       playlistUrl.searchParams.set('password', String(body.password));
       playlistUrl.searchParams.set('type', 'm3u_plus');
