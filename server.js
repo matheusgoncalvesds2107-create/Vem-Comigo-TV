@@ -66,67 +66,44 @@ async function readJsonResponse(
   timeout = 20000,
   maxBytes = 48 * 1024 * 1024
 ) {
-  const response = await fetch(url, {
-    redirect: 'error',
-    signal: AbortSignal.timeout(timeout),
-    headers: {
-      Accept: 'application/json'
-    }
-  });
+  
+    // Importação M3U com tentativa alternativa de HTTP
+    const requestOptions = {
+      redirect: 'error',
+      signal: AbortSignal.timeout(90000),
+      headers: {
+        'User-Agent': 'VemComigoTV/1.2',
+        Accept: '*/*'
+      }
+    };
 
-  if (!response.ok) {
-    throw new Error(
-      'Servidor respondeu HTTP ' +
-      response.status
-    );
-  }
+    let upstream;
 
-  const chunks = [];
-  let bytes = 0;
+    try {
+      upstream = await fetch(u, requestOptions);
+    } catch (error) {
+      const details =
+        String(error?.message || '') + ' ' +
+        String(error?.cause?.message || '');
 
-  for await (const chunk of response.body) {
-    bytes += chunk.length;
+      const tlsFailure =
+        u.protocol === 'https:' &&
+        /TLS|SSL|wrong version number|handshake|fetch failed|ECONNRESET/i
+          .test(details);
 
-    if (bytes > maxBytes) {
-      throw new Error(
-        'Catálogo excede o limite de tamanho.'
-      );
-    }
-
-    chunks.push(chunk);
-  }
-
-  return JSON.parse(
-    Buffer.concat(chunks).toString('utf8')
-  );
-}
-
-function readRequestBody(req, max = 8192) {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    let total = 0;
-    let rejected = false;
-
-    req.on('data', chunk => {
-      total += chunk.length;
-
-      if (total > max) {
-        rejected = true;
-        reject(new Error('Requisição muito grande.'));
-        req.destroy();
-        return;
+      if (!tlsFailure) {
+        throw error;
       }
 
-      body += chunk;
-    });
+      const httpUrl = new URL(u.toString());
+      httpUrl.protocol = 'http:';
+      httpUrl.port = '';
 
-    req.on('end', () => {
-      if (!rejected) resolve(body);
-    });
-
-    req.on('error', reject);
-  });
-}
+      upstream = await fetch(
+        httpUrl,
+        requestOptions
+      );
+    }
 
 // ======================================
 // FUTEBOL — JOGOS REAIS
